@@ -1,34 +1,43 @@
+#1/usr/bin/python
+
 import serial
 import serial.tools.list_ports
 import argparse
 
+def arrayRemoveEmpty(arr):
+    for i in range(len(arr)-1, -1, -1):
+        if arr[i] == "":
+            del arr[i]
+    return arr
 
-def parseCommands(cmdArr):
+def parseCommands(cmdStr):
     cmds = []
     idx = 0
-    while idx < len(cmdArr):
+    cmdArr = cmdStr.split(";")
+    arrayRemoveEmpty(cmdArr)
+    for cmd in cmdArr:
+        vals = cmd.split(" ")
+        arrayRemoveEmpty(vals)
         try:
-            read = "r"
+            action = "r"
             pin = ""
             toWrite = ""
-            if (cmdArr[idx] in ["r", "read"]):
-                read = "r"
-            elif (cmdArr[idx] in ["w", "write"]):
-                read = "w"
+            if (vals[0] in ["r", "read"]):
+                action = "r"
+            elif (vals[0] in ["w", "write"]):
+                action = "w"
+            elif (vals[0] in ["p", "pin", "mode", "pinmode"]):
+                action = "p" 
             else:
-                raise Exception()
-            idx += 1
-            pin = cmdArr[idx]
-            idx += 1
-            if not read:
-                toWrite = cmdArr[idx]
-                idx += 1
-            cmds.append("_".join([read, pin, toWrite]))
+                raise Exception(f"Action \"{vals[0]}\" invalid")
+            pin = vals[1]
+            if action != "w":
+                toWrite = vals[2]
+            cmds.append(" ".join([action, pin, toWrite]))
         except:
-            raise Exception(f"Invalid command!")
+            raise Exception(f"Invalid command \"{cmd}\"!")
     return cmds
 
-        
 
 parser = argparse.ArgumentParser(
     prog='pin2serial',
@@ -39,7 +48,8 @@ parser.add_argument('-p', '--port', help="The serial port for the communication"
 parser.add_argument('-b', '--baudrate', help="The baud rate for the serial port")
 parser.add_argument('-v', '--verbose', action="store_true")
 parser.add_argument('-k', '--keep', help="Keep the program open to receive more commands", action="store_true")
-parser.add_argument('commands', nargs='*', help="[[read/write] [Pin] [Value]*]+, e.g. read 1 write 3 high read 2")
+parser.add_argument('commands', nargs='*', help="[[read/write] [Pin] [Value]*];+,"+
+                     " e.g.: pin 0 in; pin 3 out; read 1; write 3 high; read 1")
 
 
 args = parser.parse_args()
@@ -47,7 +57,7 @@ args = parser.parse_args()
 # First check data if in correct format
 commands = []
 if args.commands:
-    commands = parseCommands(args.commands)
+    commands = parseCommands(" ".join(args.commands))
 else:
     args.keep = True
 
@@ -63,7 +73,6 @@ if not args.port:
 
 if not args.baudrate:
     args.baudrate = 19200
-
 
 # open port
 ser = serial.Serial(args.port, int(args.baudrate), timeout=1)
