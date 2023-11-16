@@ -1,4 +1,4 @@
-#1/usr/bin/python
+#!/usr/bin/env python
 
 import serial
 import serial.tools.list_ports
@@ -61,15 +61,26 @@ if args.commands:
 else:
     args.keep = True
 
+
+portsArr = serial.tools.list_ports.comports()
+ports = []
+for port, __, __ in portsArr:
+    ports.append(port)
+
+if args.port and not args.port in ports:
+    print(f"[ERROR] Port {args.port} not available")
+    args.port = None
 if not args.port:
+    if len(ports) == 0:
+        print("No serial ports available")
+        exit(2)
     print("Available serial ports: ")
-    portsArr = serial.tools.list_ports.comports()
-    ports = []
     for port, description, hwid in sorted(portsArr):
         print(f"\t{port}: {description}\t[{hwid}]")
-        ports.append(port)
     while (not args.port or args.port not in ports):
         args.port = input("Choose port: ")
+        if (args.port == "exit"):
+            exit(0)
 
 if not args.baudrate:
     args.baudrate = 19200
