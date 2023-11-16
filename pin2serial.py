@@ -31,11 +31,11 @@ def parseCommands(cmdStr):
             else:
                 raise Exception(f"Action \"{vals[0]}\" invalid")
             pin = vals[1]
-            if action != "w":
+            if action != "r":
                 toWrite = vals[2]
             cmds.append(" ".join([action, pin, toWrite]))
-        except:
-            raise Exception(f"Invalid command \"{cmd}\"!")
+        except Exception as e:
+            raise Exception(f"Invalid command \"{cmd}\": {e}")
     return cmds
 
 
@@ -69,7 +69,7 @@ if not args.port:
         print(f"\t{port}: {description}\t[{hwid}]")
         ports.append(port)
     while (not args.port or args.port not in ports):
-        args.port = input("Choose port:")
+        args.port = input("Choose port: ")
 
 if not args.baudrate:
     args.baudrate = 19200
@@ -90,7 +90,7 @@ while True:
     for cmd in commands:
         ser.write(bytes(cmd + "\n", "utf8"))
         resp = ser.readline()
-        print(resp)
+        print(resp.decode("utf-8"), end="")
     if not args.keep:
         break
     try:
@@ -99,14 +99,14 @@ while True:
         if (cmdStr == "exit"):
             break
         elif (cmdStr == ""):
-            commands = []
+            commands = [""]
             continue
-        commands = parseCommands(cmdStr.split(" "))
+        commands = parseCommands(cmdStr)
     except KeyboardInterrupt:
         print("Received SIGINT")
         break
-    except:
-        print("Invalid command!")
+    except Exception as e:
+        print(e)
         commands = []
 
 if (args.verbose):
