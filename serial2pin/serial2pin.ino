@@ -10,10 +10,6 @@ void setup() {
 
   for (int i = 0; i < NUM_PINS; i++)
     mode[i] = -1;
-
-  pinMode(LED_BUILTIN, OUTPUT);  // Initialize the LED_BUILTIN pin as an output
-  pinMode(23, OUTPUT);
-  pinMode(22, INPUT_PULLUP);
 }
 
 // the loop function runs over and over again forever
