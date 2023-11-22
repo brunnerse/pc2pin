@@ -30,10 +30,14 @@ def parseCommands(cmdStr):
                 action = "w"
             elif (vals[0] in ["p", "pin", "m", "mode", "pinmode"]):
                 action = "p" 
+            elif (vals[0] in ["a", "ar", "AR", "ra", "RA", "analogRead"]):
+                action = "a"
+            elif (vals[0] in ["A", "aw", "AW", "wa", "WA", "analogWrite"]):
+                action = "A"
             else:
                 raise Exception(f"Action \"{vals[0]}\" invalid")
             pin = str(int(vals[1]))  # Make sure value is convertable to int
-            if action != "r":
+            if action not in  ["r", "a"]:
                 toWrite = vals[2]
             if "-n" in vals:
                 repeat = str(int(vals[vals.index("-n")+1])) # Make sure value is convertable to int
@@ -108,13 +112,11 @@ while True:
         repeat = 1
         if len(cmd) > 2:
             repeat = int(cmd.split(" ")[3])
+        ser.flush()
         ser.write(bytes(cmd + "\n", "utf8"))
         print("Wrote " + cmd + " with repeat ", repeat)
         for i in range(repeat):
-            resp = ""
-            # if cmd was not empty, read until some text comes back
-            while len(resp) == 0 and len(cmd) > 0:
-                resp = ser.readline().decode("utf-8")
+            resp = ser.readline().decode("utf-8")
             print(resp, end="")
             if resp.startswith("[ERROR]"):
                 break
