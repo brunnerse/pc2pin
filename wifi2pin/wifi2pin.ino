@@ -5,7 +5,8 @@
  * LED D4 (Upper LED): Is On when the server sets up the Wifi Connection and the Server and when the engine is on
  * 
  */
-#include <ESP8266WiFi.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
 #include <string.h>
 #include "config.h" 
 
@@ -18,23 +19,46 @@ enum _state {
 } state;
 
 
-//#define DEBUG         //Comment this line if the server should not print any debug messages
-
 #define ACK 6 //acknowledge byte, sent every second so the client knows the server didnt time out
-#define VERSION "1.0"
 
-#define SERVER_PORT 1337
-
-
+#define PIN_LED 2
 #define LED_BLINK_RATE 3 
+
+
+String readUntil(WiFiClient& client, char end) {
+  String s;
+  char c;
+  do {
+    c = (char)client.read();
+    s += c;
+  } while (c != end);
+  return s;
+}
+
+int parseInt(WiFiClient& client) {
+  String s;
+  char c;
+  do {
+    c = (char)client.read();
+    s += c;
+  } while (c != ' ' && c != '\n');
+  return atoi(s.c_str());
+}
+
+void sendf(WiFiClient& client, const char* fstr, int arg1=0, int arg2=0, int arg3=0) {
+  char str[100];
+  int len = snprintf(str, 100, fstr, arg1, arg2, arg3);
+  client.write(str, len);
+}
 
 class LEDManager {
 	int pin;
 	bool isOn;
 	int lastCycleSwitched;
 
-	LEDManager(pin) :
-		pin(pin), isOn(false), lastCycleSwitched(0) {
+	LEDManager(int pin) :
+		pin(pin), isOn(false), lastCycleSwitched(0) 
+  {
 		pinMode(pin, OUTPUT);
 	}
 
@@ -57,11 +81,9 @@ class LEDManager {
 	void blink(int cycleNr, int cycleRate) {
 		// TODO
 	}
+};
 
-}
 
-#define PIN_LED D0 //Lower LED, on when LOW (default:LOW)
-#define PIN_LED2 D4 //Upper LED, on when LOW(default:LOW)
 
 void flush(WiFiClient client);
 void findClient();
@@ -75,7 +97,6 @@ int loopsSinceACK = 0;
 void setup() {
 	// init pins
 	pinMode(PIN_LED, OUTPUT);
-	pinMode(PIN_LED2, OUTPUT);
 	//TODO use LEDManager instead
   	for (int i = 0; i < NUM_PINS; i++)
     	mode[i] = -1;
@@ -137,7 +158,7 @@ void setup() {
         Serial.println("Server started");
     #endif
 
-    digitalWrite(PIN_LED2, HIGH);
+    //digitalWrite(PIN_LED, HIGH);
 
 	state = DISCONNECTED;
 }
@@ -147,7 +168,7 @@ void loop() {
 	switch (state) {
 		case DISCONNECTED:
 			checkClientAvailable();
-			if (client.connected()) {
+			if (client) {
 				state = CONNECTED;
 				#ifdef DEBUG
 					Serial.print("Connected to Client at ");
@@ -168,7 +189,7 @@ void loop() {
 				client = WiFiClient();
 				return;
 			}
-			if (!client.connected() ) {
+			if (!client) {
 				state = DISCONNECTED;
 				#ifdef DEBUG
 					Serial.println("Client disconnected.");
@@ -208,9 +229,9 @@ void loop() {
 			switch(action) {
 			case 'r':
 				if (mode[pin] == 'r' || mode[pin] == 'p') {
-					client.printf("IN [Pin %d]: %2d\n", pin, digitalRead(pin));
+					sendf(client, "IN [Pin %d]: %2d\n", pin, digitalRead(pin));
 				} else {
-					client.printf("[ERROR] Pin %2d is not set to input\n", pin);
+					sendf(client, "[ERROR] Pin %2d is not set to input\n", pin);
 				}
 				break;
 			case 'w':
@@ -218,26 +239,26 @@ void loop() {
 					// TODO value checking? PWM?
 					int outVal = atoi(value.c_str());
 					digitalWrite(pin, outVal);
-					client.printf("OUT [Pin %2d]: %d\n", pin, outVal);
+					sendf(client, "OUT [Pin %2d]: %d\n", pin, outVal);
 				} else {
-					client.printf("[ERROR] Pin %d is not set to output\n", pin);
+					sendf(client, "[ERROR] Pin %d is not set to output\n", pin);
 				}
 				break;
 			case 'p':
 				if (value.startsWith("in")) {
 					pinMode(pin, INPUT);
-					client.printf("PINMODE [Pin %d]: input\n", pin);
+					sendf(client, "PINMODE [Pin %d]: input\n", pin);
 					mode[pin] = 'r';
 				} else if (value.startsWith("out")) {
 					pinMode(pin, OUTPUT);
-					client.printf("PINMODE [Pin %d]: output\n", pin);
+					sendf(client, "PINMODE [Pin %d]: output\n", pin);
 					mode[pin] = 'w';
 				} else if (value.endsWith("pullup")) {
 					pinMode(pin, INPUT_PULLUP);
-					client.printf("PINMODE [Pin %d]: input_pullup\n", pin);
+					sendf(client, "PINMODE [Pin %d]: input_pullup\n", pin);
 					mode[pin] = 'p';
 				} else {
-					client.printf("[ERROR] Pin mode %s invalid\n", value.c_str());
+					sendf(client, "[ERROR] Pin mode %s invalid\n", (int)value.c_str());
 				}
 				break;
 			default:
@@ -252,27 +273,27 @@ void loop() {
 }
 
 
-void checkClientAvailable() {
+bool checkClientAvailable() {
 	client = server.available();
 	if (client) {
-    	client.printf("ESP_SERVER %s\n", VERSION);
+    	sendf(client, "ESP_SERVER %s\n", (int)VERSION);
 		bool clientApproved = false;
 		for (int i = 0; i < 200; ++i) { //Wait 1 Second for Message By client
 			delay(5);
 			if (client.available()) {
-				String response = client.readStringUntil('\n');
+				String response = readUntil(client, '\n');
 				Serial.println(response);
-				if (response.equals(String("ESP_CLIENT ") + VERSION)) {
+				if (response.equals(String("ESP_CLIENT ") + VERSION + '\n')) {
 					clientApproved = true;
 				}
 				break;
 			}
 		}
 		if (!clientApproved) {
-			client.printf("Client does not match server, requires ESP_CLIENT %s\n", VERSION);
+			sendf(client, "Client does not match server, requires ESP_CLIENT %s\n", (int)VERSION);
 			// reset client
 			client.stop();
-			client = WifiClient();
+			client = WiFiClient();
 		} else {
 			return true;
 		}
