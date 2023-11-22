@@ -22,18 +22,24 @@ def parseCommands(cmdStr):
             action = "r"
             pin = ""
             toWrite = ""
+            repeat = "1"
+            delay = "50"
             if (vals[0] in ["r", "read"]):
                 action = "r"
             elif (vals[0] in ["w", "write"]):
                 action = "w"
-            elif (vals[0] in ["p", "pin", "mode", "pinmode"]):
+            elif (vals[0] in ["p", "pin", "m", "mode", "pinmode"]):
                 action = "p" 
             else:
                 raise Exception(f"Action \"{vals[0]}\" invalid")
-            pin = vals[1]
+            pin = str(int(vals[1]))  # Make sure value is convertable to int
             if action != "r":
                 toWrite = vals[2]
-            cmds.append(" ".join([action, pin, toWrite]))
+            if "-n" in vals:
+                repeat = str(int(vals[vals.index("-n")+1])) # Make sure value is convertable to int
+            if "-d" in vals:
+                delay = str(int(vals[vals.index("-d")+1])) # Make sure value is convertable to int
+            cmds.append(" ".join([action, pin, toWrite, repeat, delay]))
         except Exception as e:
             raise Exception(f"Invalid command \"{cmd}\": {e}")
     return cmds
@@ -99,13 +105,22 @@ if args.commands:
     print(">> " + " ".join(args.commands))
 while True:
     for cmd in commands:
+        repeat = 1
+        if len(cmd) > 2:
+            repeat = int(cmd.split(" ")[3])
         ser.write(bytes(cmd + "\n", "utf8"))
-        resp = ser.readline()
-        print(resp.decode("utf-8"), end="")
+        print("Wrote " + cmd + " with repeat ", repeat)
+        for i in range(repeat):
+            resp = ""
+            # if cmd was not empty, read until some text comes back
+            while len(resp) == 0 and len(cmd) > 0:
+                resp = ser.readline().decode("utf-8")
+            print(resp, end="")
+            if resp.startswith("[ERROR]"):
+                break
     if not args.keep:
         break
     try:
-        # TODO react correctly to CTRL+C
         cmdStr = input(">> ")
         if (cmdStr == "exit"):
             break
