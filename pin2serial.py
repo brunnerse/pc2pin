@@ -3,6 +3,7 @@
 import serial
 import serial.tools.list_ports
 import argparse
+from argparse import RawTextHelpFormatter
 
 def arrayRemoveEmpty(arr):
     for i in range(len(arr)-1, -1, -1):
@@ -52,14 +53,30 @@ def parseCommands(cmdStr):
 parser = argparse.ArgumentParser(
     prog='pin2serial',
     description='Reads and writes Microcontroller Pins over USB serial connection',
-    epilog='')#Text at the bottom of help')
+    formatter_class=RawTextHelpFormatter,
+    epilog=
+        '''A single command has the following structure:
+        <action> <pin> [value] [-n repeats] [-n delays] 
+
+        action is:
+        w for writing (value = 0/1/t for toggling), wa for analog writing (value=0-255),
+        r for reading (value empty), ra for analog reading (value empty),
+        p or m for setting the mode of the pin (value = out/in/pullup).
+        the command is repeated <repeat> times (default 1).
+        Between each repeat and after the command, the controller waits <delay> msec. (default 50)
+        
+        Examples:
+        p 23 out; w 23 1; w 23 t -n 50 -n 100;
+        ra 4;
+        p 22 in; r 22 -n 10
+        p 23 out; wa 23 128 -d 500; wa 23 255 -d 500; wa 23 0''')
 
 parser.add_argument('-p', '--port', help="The serial port for the communication")
 parser.add_argument('-b', '--baudrate', help="The baud rate for the serial port")
 parser.add_argument('-v', '--verbose', action="store_true")
 parser.add_argument('-k', '--keep', help="Keep the program open to receive more commands", action="store_true")
-parser.add_argument('commands', nargs='*', help="[[read/write] [Pin] [Value]*];+,"+
-                     " e.g.: pin 0 in; pin 3 out; read 1; write 3 high; read 1")
+parser.add_argument('commands', nargs='*', help="[[action] [pin] [Value]* [-n repeats] [-d delay];]+"
+                     )
 
 
 args = parser.parse_args()
