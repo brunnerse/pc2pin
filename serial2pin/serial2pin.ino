@@ -44,6 +44,10 @@ void loop() {
           break;
         case 'w':
           if (mode[pin] == 'w') {
+            if (value == "n"){
+              Serial.printf("OUT [Pin %2d]: %d\n", pin, outVals[pin]);
+              break;
+            }
             unsigned int outVal = (value == "t") ? !outVals[pin] : atoi(value.c_str());
             if (outVal > 1) {
               Serial.printf("[ERROR] Value %d too high; use mode A for digital writing\n", outVal);
@@ -75,6 +79,7 @@ void loop() {
             } else {
               analogWrite(pin, outVal);
               Serial.printf("OUT A [Pin %2d]: %3d\n", pin, outVal);
+              outVals[pin] = outVal;
             }
           } else {
             Serial.printf("[ERROR] Pin %d is not set to output\n", pin);

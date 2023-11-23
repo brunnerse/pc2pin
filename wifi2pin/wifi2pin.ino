@@ -6,48 +6,28 @@
  * 
  */
 #include <WiFi.h>
-#include <WiFiClient.h>
 #include <string.h>
 #include "config.h" 
 
 #define NUM_PINS 25
 
 int mode[NUM_PINS];
+int outVals[NUM_PINS];
 
 enum _state {
 	CONNECTED, DISCONNECTED
 } state;
 
 
-#define ACK 6 //acknowledge byte, sent every second so the client knows the server didnt time out
+#define ACK '.' //acknowledge byte, sent every second so the client knows the server didnt time out
 
 #define PIN_LED 2
 #define LED_BLINK_RATE 3 
 
-
-String readUntil(WiFiClient& client, char end) {
-  String s;
-  char c;
-  do {
-    c = (char)client.read();
-    s += c;
-  } while (c != end);
-  return s;
-}
-
-int parseInt(WiFiClient& client) {
-  String s;
-  char c;
-  do {
-    c = (char)client.read();
-    s += c;
-  } while (c != ' ' && c != '\n');
-  return atoi(s.c_str());
-}
-
 void sendf(WiFiClient& client, const char* fstr, int arg1=0, int arg2=0, int arg3=0) {
   char str[100];
   int len = snprintf(str, 100, fstr, arg1, arg2, arg3);
+  Serial.printf("Sending data %s\n", str);
   client.write(str, len);
 }
 
@@ -89,8 +69,8 @@ void flush(WiFiClient client);
 void findClient();
 
 
-bool isLedOn = false, isLed2On = false;
-WiFiServer server(SERVER_PORT);
+bool isLedOn = false;
+WiFiServer server(SERVER_PORT, 1);
 WiFiClient client;
 int loopsSinceACK = 0;
 
@@ -129,8 +109,7 @@ void setup() {
       #endif
   #else
         #ifdef DEBUG
-            Serial.print("Connecting to ");
-            Serial.print(ssid);
+            Serial.printf("Connecting to %s...\n", SSID);
         #endif
         
         WiFi.begin(SSID, PASSWORD);
@@ -151,11 +130,17 @@ void setup() {
     #endif
     delay(20);
     // Start the server
-    server.setNoDelay(true);
-    server.begin();
-  
     #ifdef DEBUG
-        Serial.println("Server started");
+        Serial.println("Starting server...");
+    #endif
+    server.begin();
+    server.setNoDelay(true);
+  
+    while (!server)
+      delay(50);
+    #ifdef DEBUG
+      Serial.printf("no delay: %d\n", server.getNoDelay());
+      Serial.println("Server started");
     #endif
 
     //digitalWrite(PIN_LED, HIGH);
@@ -165,6 +150,8 @@ void setup() {
 
 
 void loop() {
+
+  // manage wifi clients
 	switch (state) {
 		case DISCONNECTED:
 			checkClientAvailable();
@@ -179,22 +166,22 @@ void loop() {
 			//TODO make LED blink
 			return;
 		case CONNECTED:
-			// TODO check if client timed out 
-    		loopsSinceACK++;
-			if (loopsSinceACK > 2) { //client timed out
-				#ifdef DEBUG
-					Serial.println("Client timed out.");
-				#endif
-				client.stop();
-				client = WiFiClient();
-				return;
-			}
 			if (!client) {
 				state = DISCONNECTED;
 				#ifdef DEBUG
 					Serial.println("Client disconnected.");
 				#endif
 				// TODO make all outputs off?
+				return;
+			}
+      // TODO check if client timed out 
+    	loopsSinceACK++;
+			if (loopsSinceACK == -1) { //client timed out
+				#ifdef DEBUG
+					Serial.println("Client timed out.");
+				#endif
+				client.stop();
+				client = WiFiClient();
 				return;
 			}
 			// TODO check if another client wants to connect (server.available)
@@ -206,13 +193,12 @@ void loop() {
 			break;
 	}
 
-	// this part is only called for state connected
-
-    delay(2);
+  delay(10);
 
 	// process client messages
-	if (client.available()) {           
+	if (state == CONNECTED && client.available()) {           
 		char action = client.read(); //first char says left or right motor
+    Serial.printf("Received %c\n", action);
 
 		//Test if it was just an ACKnowledge byte sent to confirm the connection didnt timeout
 		// TODO just ignore ACK and instead count cycles until client.available?
@@ -222,54 +208,103 @@ void loop() {
 		} else {
 			// TODO find right functions
 			int pin = client.parseInt();
-			String value = client.readStringUntil('\n');
+      client.readStringUntil(' ');
+			String value = client.readStringUntil(' ');
+      int repeat = client.parseInt();
+      int delayVal = client.parseInt();
+
+      client.readStringUntil('\n');
+
+
 			value.trim();
 			value.toLowerCase();
 
-			switch(action) {
-			case 'r':
-				if (mode[pin] == 'r' || mode[pin] == 'p') {
-					sendf(client, "IN [Pin %d]: %2d\n", pin, digitalRead(pin));
-				} else {
-					sendf(client, "[ERROR] Pin %2d is not set to input\n", pin);
-				}
-				break;
-			case 'w':
-				if (mode[pin] == 'w') {
-					// TODO value checking? PWM?
-					int outVal = atoi(value.c_str());
-					digitalWrite(pin, outVal);
-					sendf(client, "OUT [Pin %2d]: %d\n", pin, outVal);
-				} else {
-					sendf(client, "[ERROR] Pin %d is not set to output\n", pin);
-				}
-				break;
-			case 'p':
-				if (value.startsWith("in")) {
-					pinMode(pin, INPUT);
-					sendf(client, "PINMODE [Pin %d]: input\n", pin);
-					mode[pin] = 'r';
-				} else if (value.startsWith("out")) {
-					pinMode(pin, OUTPUT);
-					sendf(client, "PINMODE [Pin %d]: output\n", pin);
-					mode[pin] = 'w';
-				} else if (value.endsWith("pullup")) {
-					pinMode(pin, INPUT_PULLUP);
-					sendf(client, "PINMODE [Pin %d]: input_pullup\n", pin);
-					mode[pin] = 'p';
-				} else {
-					sendf(client, "[ERROR] Pin mode %s invalid\n", (int)value.c_str());
-				}
-				break;
-			default:
-				Serial.printf("[ERROR] Command invalid\n");
-			}
-			// TODO necessary?
-			flush(client); 
-		}
+      
+    bool error = false;
 
-	}
-    
+      for (int i = 0; i < repeat && !error; i++) {
+        switch (action) {
+          case 'r':
+            if (mode[pin] == 'r' || mode[pin] == 'p') {
+              sendf(client, "IN [Pin %2d]: %d\n", pin, digitalRead(pin));
+            } else {
+              sendf(client, "[ERROR] Pin %2d is not set to input\n", pin);
+              error = true;
+            }
+            break;
+          case 'w':
+            if (mode[pin] == 'w') {
+              if (value == "n"){
+                sendf(client, "OUT [Pin %2d]: %d\n", pin, outVals[pin]);
+                break;
+              }
+              unsigned int outVal = (value == "t") ? !outVals[pin] : atoi(value.c_str());
+              if (outVal > 1) {
+                sendf(client, "[ERROR] Value %d too high; use mode A for digital writing\n", outVal);
+                error = true;
+              } else {
+                digitalWrite(pin, outVal);
+                sendf(client, "OUT [Pin %2d]: %d\n", pin, outVal);
+                outVals[pin] = outVal;
+              }
+            } else {
+              sendf(client, "[ERROR] Pin %d is not set to output\n", pin);
+              error = true;
+            }
+            break;
+          case 'a':
+            if (mode[pin] != 'w') {
+              Serial.printf("Analog val of %d: %d\n", pin, analogRead(pin));
+              sendf(client, "IN A [Pin %2d]: %4d\n", pin, analogRead(pin));
+            } else {
+              sendf(client, "[ERROR] Cannot read analog: Pin %2d is set to output\n", pin);
+              error = true;
+            }
+            break;
+          case 'A':
+            if (mode[pin] == 'w') {
+              unsigned int outVal = atoi(value.c_str());
+              if (outVal > 255) {
+                sendf(client, "[ERROR] Value %d too high; analog value must be in range 0-255\n", outVal);
+                error = true;
+              } else {
+                analogWrite(pin, outVal);
+                sendf(client, "OUT A [Pin %2d]: %3d\n", pin, outVal);
+                outVals[pin] = outVal;
+              }
+            } else {
+              sendf(client, "[ERROR] Pin %d is not set to output\n", pin);
+              error = true;
+            }
+            break;
+          case 'p':
+            if (value.endsWith("pullup")) {
+              pinMode(pin, INPUT_PULLUP);
+              sendf(client, "PINMODE [Pin %d]: input_pullup\n", pin);
+              mode[pin] = 'p';
+            }
+            else if (value.startsWith("in")) {
+              pinMode(pin, INPUT);
+              sendf(client, "PINMODE [Pin %d]: input\n", pin);
+              mode[pin] = 'r';
+            } else if (value.startsWith("out")) {
+              pinMode(pin, OUTPUT);
+              sendf(client, "PINMODE [Pin %d]: output\n", pin);
+              mode[pin] = 'w';
+            } else {
+              sendf(client, "[ERROR] Pin mode %s invalid\n", (int)value.c_str());
+              error = true;
+            }
+            break;
+          default:
+            sendf(client, "[ERROR] Command invalid\n");
+            error = true;
+        }
+        delay(delayVal);
+      }
+    }
+  }
+  delay(10);
 }
 
 
@@ -281,9 +316,9 @@ bool checkClientAvailable() {
 		for (int i = 0; i < 200; ++i) { //Wait 1 Second for Message By client
 			delay(5);
 			if (client.available()) {
-				String response = readUntil(client, '\n');
+				String response = client.readStringUntil('\n');
 				Serial.println(response);
-				if (response.equals(String("ESP_CLIENT ") + VERSION + '\n')) {
+				if (response.equals(String("ESP_CLIENT ") + VERSION)) {
 					clientApproved = true;
 				}
 				break;
