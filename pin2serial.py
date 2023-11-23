@@ -132,9 +132,12 @@ while True:
         if len(cmd) > 2:
             repeat = int(cmd.split(" ")[3])
         ser.flush()
-        ser.write(bytes(cmd + "\n", "utf8"))
+        ser.write(bytes(cmd + "\n", "ascii"))
         for i in range(repeat):
-            resp = ser.readline().decode("utf-8")
+            try:
+                resp = ser.readline().decode("ascii")
+            except UnicodeDecodeError as e:
+                print(e)
             print(resp, end="")
             if resp.startswith("[ERROR]"):
                 break
