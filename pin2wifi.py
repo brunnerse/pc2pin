@@ -1,13 +1,18 @@
 #!/usr/bin/env python
 
 import socket
+import time
 import argparse
 from argparse import RawTextHelpFormatter
+import threading
 
 
 DEFAULT_IP = "192.168.0.1"
 DEFAULT_PORT = 1337
 VERSION = "1.0"
+ACK = b"."
+
+stopACKSend = False
 
 def arrayRemoveEmpty(arr):
     for i in range(len(arr)-1, -1, -1):
@@ -53,6 +58,10 @@ def parseCommands(cmdStr):
             raise Exception(f"Invalid command \"{cmd}\": {e}")
     return cmds
 
+def sendACKPeriodically(sock):
+    while not stopACKSend:
+        sock.sendall(ACK, socket.TCP_NODELAY)
+        time.sleep(0.5)
 
 parser = argparse.ArgumentParser(
     prog='pin2serial',
@@ -100,12 +109,15 @@ if not args.port:
 
 # open port
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.settimeout(2)
+sock.settimeout(3)
+
 
 if (args.verbose):
     print(f"Connecting to server {args.ip}:{args.port}...")
 try:
     sock.connect((args.ip, args.port))
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
 except KeyboardInterrupt:
     print("Received SIGINT")
     sock.close()
@@ -116,6 +128,9 @@ except Exception as e:
 print(f"Connected.")
 
 sock.send(bytes("ESP_CLIENT " + VERSION + "\n", "utf8"))
+serverVersion = sock.recv(20)
+if (args.verbose):
+    print("Server version: " + serverVersion.decode("utf-8"), end="")
 
 if args.commands:
     print(">> " + " ".join(args.commands))
@@ -124,16 +139,24 @@ while True:
         repeat = 1
         if len(cmd) > 2:
             repeat = int(cmd.split(" ")[3])
-        #ser.flush()
-        sock.send(bytes(cmd + "\n", "utf8"))
-        print("Wrote " + cmd + " with repeat ", repeat)
+        msg = bytes(cmd + "\n", "utf-8")
+        totalsent = 0
+        while totalsent < len(msg):
+            sent = sock.send(msg[totalsent:])
+            if sent == 0:
+                raise RuntimeError("socket connection broken")
+            totalsent = totalsent + sent
         for i in range(repeat):
             resp = b""
-            c = sock.recv(1)
-            resp += c
-            while c != b"\n":
-                c = sock.recv(1)
-                resp += c
+            while True:
+                try:
+                    c = sock.recv(1)
+                    resp += c
+                except socket.timeout as e:
+                    print("timeout")
+                    break
+                if b"\n" in c:
+                    break
             resp = resp.decode("utf-8")
             print(resp, end="")
             if resp.startswith("[ERROR]"):
@@ -141,6 +164,10 @@ while True:
     if not args.keep:
         break
     try:
+        # send ACK to signal we didn't time out
+        stopACKSend = False
+        #threading.Thread(target=sendACKPeriodically, args=(sock,)).start()
+        # TODO check whether server didn't time out
         cmdStr = input(">> ")
         if (cmdStr == "exit"):
             break
@@ -154,9 +181,11 @@ while True:
     except Exception as e:
         print(e)
         commands = []
+    finally:
+        stopACKSend = True
 
 if (args.verbose):
-    print("Closing serial connection...")
+    print("Closing connection...")
 sock.close()
 
 

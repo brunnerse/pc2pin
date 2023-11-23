@@ -59,7 +59,8 @@ parser = argparse.ArgumentParser(
         <action> <pin> [value] [-n repeats] [-n delays] 
 
         action is:
-        w for writing (value = 0/1/t for toggling), wa for analog writing (value=0-255),
+        w for writing (value = 0/1/t/n with t for toggling and n for nothing (basically printing the output val)),
+        wa for analog writing (value=0-255),
         r for reading (value empty), ra for analog reading (value empty),
         p or m for setting the mode of the pin (value = out/in/pullup).
         the command is repeated <repeat> times (default 1).
@@ -121,6 +122,7 @@ if not ser.is_open:
     print("Failed to open serial port. Parameter were:")
     print(ser)
     exit(1)
+print(f"Connected.")
 
 if args.commands:
     print(">> " + " ".join(args.commands))
@@ -131,7 +133,6 @@ while True:
             repeat = int(cmd.split(" ")[3])
         ser.flush()
         ser.write(bytes(cmd + "\n", "utf8"))
-        print("Wrote " + cmd + " with repeat ", repeat)
         for i in range(repeat):
             resp = ser.readline().decode("utf-8")
             print(resp, end="")
