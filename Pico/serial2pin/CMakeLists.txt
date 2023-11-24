@@ -1,9 +1,10 @@
+set(PROJECT_NAME serial2pin)
 #Set minimum required version of CMake
 cmake_minimum_required(VERSION 3.12)
 #include build functions from Pico SDK
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 # Set name of project (as PROJECT_NAME) and C/C++ Standards
-project(serial2pin C CXX ASM)
+project(${PROJECT_NAME} C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -12,7 +13,7 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 # point out the CMake, where to find the executable source file
 add_executable(${PROJECT_NAME}
-        serial2pin.c
+        serial2pin.cpp
 )
 
 pico_enable_stdio_usb(serial2pin 1)
