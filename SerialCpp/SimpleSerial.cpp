@@ -185,6 +185,39 @@ bool  SimpleSerial::setBaudrate(uint32_t baudrate) {
     return SetCommState(this->hCom, &this->dcb) != 0;
 }
 
+uint32_t SimpleSerial::findBaudrate(const std::string& dataToSend, const std::string& dataToExpect) {
+    if (!connected)
+        return 0;
+#ifdef DEBUG
+    printf("[Serial] Testing baud rates by sending \"%s\" and expecting to receive \"%s\"...\n",
+        dataToSend.c_str(), dataToExpect.c_str());
+#endif
+    static const uint32_t rates[] = {110, 300, 600, 1200, 2400, 4800, 9600,
+    14400, 19200, 38400, 57600, 115200, 128000, 256000}; 
+
+    for (uint32_t rate : rates) {
+        this->setBaudrate(rate);
+#ifdef DEBUG
+        printf("[Serial] Testing baud rate %u ...\n", rate);
+#endif
+        this->write(dataToSend);
+        std::string output = this->read(dataToSend.length()+10);
+        if (output.compare(dataToExpect) == 0) {
+#ifdef DEBUG
+           printf("[Serial] Success for baud rate %u: Received \"%s\"\n", rate, output.c_str());
+#endif
+           return rate;  
+        } else {
+#ifdef DEBUG
+           printf("[Serial] Failed: Received \"%s\"\n", output.c_str());
+#endif
+        }
+    }
+    // No correct baud rate found
+    return 0;
+
+}
+
 unsigned int SimpleSerial::getBaudrate() {
     if (!this->connected)
         return 0;

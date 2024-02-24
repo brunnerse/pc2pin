@@ -33,11 +33,10 @@ class SimpleSerial {
         bool setBaudrate(uint32_t baudrate);
         unsigned int getBaudrate();
 
-
         bool setTotalTimeouts(uint32_t readTimeoutMS, uint32_t writeTimeoutMS);
 
         // sets different baud rates, sends data and checks if it gets a valid answer
-        bool findBaudrate(const std::string& dataToSend);
+        uint32_t findBaudrate(const std::string& dataToSend, const std::string& dataToExpect);
 
         SimpleSerial(); 
         SimpleSerial(const std::string& port); 
