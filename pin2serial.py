@@ -122,7 +122,7 @@ if not ser.is_open:
     print("Failed to open serial port. Parameter were:")
     print(ser)
     exit(1)
-print(f"Connected.")
+print(f"Connected. ({ser})")
 
 if args.commands:
     print(">> " + " ".join(args.commands))
@@ -135,12 +135,16 @@ while True:
         ser.write(bytes(cmd + "\n", "ascii"))
         for i in range(repeat):
             try:
-                resp = ser.readline().decode("ascii")
+                resp = ser.readline()
+                for j in range(len(resp)):
+                    if resp[j] > 127:
+                        resp = resp[:j]+b'?'+resp[j+1:]
+                resp = resp.decode("ascii")
+                print(resp, end="")
+                if resp.startswith("[ERROR]"):
+                    break
             except UnicodeDecodeError as e:
                 print(e)
-            print(resp, end="")
-            if resp.startswith("[ERROR]"):
-                break
     if not args.keep:
         break
     try:

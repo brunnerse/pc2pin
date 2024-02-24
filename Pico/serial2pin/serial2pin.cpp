@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string>
-#include <stdlib.h>
+//#include <stdlib.h>
 #include "pico/stdlib.h"
 
 #define NUM_PINS 25
@@ -10,10 +10,10 @@ int outVals[NUM_PINS];
 
 int readUntil(char* target, char terminating, unsigned int maxLen) {
     for (int i = 0; i < maxLen; i++) {
-        char c = getchar();
-        if (c == terminating)
+        int c = getchar_timeout_us(1000);
+        if (c == terminating || c == PICO_ERROR_TIMEOUT)
             return i;
-        target[i] = c;
+        target[i] = (char)c;
     }
     return maxLen;
 }
@@ -21,6 +21,8 @@ int readUntil(char* target, char terminating, unsigned int maxLen) {
 
 int main() {
     stdio_init_all();
+   // while (!stdio_usb_connected())
+    //    sleep_ms(100);
 
     for (int i = 0; i < NUM_PINS; i++) {
         mode[i] = -1;
@@ -31,8 +33,12 @@ int main() {
     // loop
     char chunk[10];
     while(true){
-        char action = getchar(); 
-        getchar();
+        int action;
+        do {
+            action = getchar_timeout_us(1000);
+        } while (action == PICO_ERROR_TIMEOUT);
+        
+        getchar_timeout_us(1000);
         readUntil(chunk, ' ', 10);
         int pin = atoi(chunk);
         readUntil(chunk, ' ', 10);
@@ -41,11 +47,12 @@ int main() {
         int repeat = atoi(chunk);
         readUntil(chunk, '\n', 10);
         int delayVal = atoi(chunk);
+       /* 
+       int pin, repeat, delayVal;
+       scanf(" %d %s %d %d\n", &pin, chunk, &repeat, &delayVal);
+       std::string value = chunk;
+       */
 
-        printf("Test\n");
-        printf("%d %d %d\n", pin, repeat, delayVal);
-        printf("%c\n", action);
-        printf("%s\n", value.c_str());
         printf("%c %d %s %d %d\n", action, pin, value.c_str(), repeat, delayVal);
         bool error = false;
 
