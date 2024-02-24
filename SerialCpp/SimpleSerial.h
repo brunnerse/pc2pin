@@ -29,9 +29,12 @@ class SimpleSerial {
 
         void printPortConfig();
         bool setPortConfig(uint32_t baudrate, uint32_t bytesize = 8, 
-        SimpleSerial::Parity parityBit=NO, SimpleSerial::StopBits stopBits=ONE);
+        SimpleSerial::Parity parity=NO, SimpleSerial::StopBits stopBits=ONE);
         bool setBaudrate(uint32_t baudrate);
         unsigned int getBaudrate();
+
+
+        bool setTotalTimeouts(uint32_t readTimeoutMS, uint32_t writeTimeoutMS);
 
         // sets different baud rates, sends data and checks if it gets a valid answer
         bool findBaudrate(const std::string& dataToSend);
@@ -41,7 +44,7 @@ class SimpleSerial {
         SimpleSerial(const std::string& port, uint32_t baudRate); 
         ~SimpleSerial();
 
-        std::string read();
+        std::string read(uint32_t maxBytes);
 
         
         uint32_t available();

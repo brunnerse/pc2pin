@@ -40,9 +40,43 @@ SimpleSerial::~SimpleSerial()
     }
 }
 
+bool SimpleSerial::setTotalTimeouts(uint32_t readTimeoutMs, uint32_t writeTimeoutMs) {
+    if (!connected)
+        return false;
+#ifdef _WIN32
+    COMMTIMEOUTS timeouts;
+/*
+    bool success = GetCommTimeouts(this->hCom, &timeouts);
+    if (!success)
+        return false;
+*/
+    timeouts.ReadIntervalTimeout = 1;
+    timeouts.ReadTotalTimeoutMultiplier = 0;
+    timeouts.WriteTotalTimeoutMultiplier = 0;
+    timeouts.ReadTotalTimeoutConstant = readTimeoutMs;
+    timeouts.WriteTotalTimeoutConstant = writeTimeoutMs;
+    return SetCommTimeouts(this->hCom, &timeouts); 
+#else
+#endif
+}
 
-std::string SimpleSerial::read() {
-    return std::string();
+
+std::string SimpleSerial::read(uint32_t maxBytes) {
+    if (!connected) {
+        return std::string("");
+    }
+
+    char* const buffer = new char[maxBytes+1];
+    uint32_t bytesWritten;
+    
+    bool success = ReadFile(this->hCom, (void*)buffer, maxBytes, (DWORD*)&bytesWritten, NULL);
+    if (!success)
+        return std::string("");
+
+    buffer[bytesWritten] = '\0'; 
+    std::string s(buffer);
+    delete[] buffer;
+    return s;
 }
 
 // read without blocking. TODO or check if sth available?
@@ -52,7 +86,22 @@ uint32_t SimpleSerial::available() {
 
 
 bool SimpleSerial::write(std::string data) {
-    return false;
+    if (!connected) {
+        return false;
+    }
+
+    const char *buffer = data.c_str();
+    uint32_t length = (uint32_t)data.length();
+    uint32_t bytesWritten;
+    
+    bool success = WriteFile(this->hCom, buffer, length, (DWORD*)&bytesWritten, NULL);
+    if (bytesWritten < length) {
+        // TODO write rest again?
+#ifdef DEBUG
+        printf("[Serial] write(): Wrote %u out of %u bytes.", bytesWritten, length);
+#endif
+    }
+    return success;
 }
 
 
@@ -117,12 +166,12 @@ bool SimpleSerial::close() {
 
 
 bool SimpleSerial::setPortConfig(uint32_t baudrate, uint32_t bytesize, 
-        SimpleSerial::Parity parityBit, SimpleSerial::StopBits stopBits) {
+        SimpleSerial::Parity parity, SimpleSerial::StopBits stopBits) {
     if (!this->connected)
         return false;
     this->dcb.BaudRate = (DWORD)baudrate;
     this->dcb.ByteSize = (BYTE)bytesize;
-    this->dcb.Parity = (BYTE)parityBit;
+    this->dcb.Parity = (BYTE)parity;
     this->dcb.StopBits = (BYTE)stopBits;
 
     return SetCommState(this->hCom, &this->dcb) != 0;
