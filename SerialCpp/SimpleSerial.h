@@ -2,8 +2,11 @@
 #include <vector>
 #include <string>
 #include <stdint.h>
+
 #ifdef _WIN32
-#include <windows.h>
+    #include <windows.h>
+#else
+    #include <termios.h>
 #endif
 
 class SimpleSerial {
@@ -13,11 +16,18 @@ class SimpleSerial {
 #ifdef _WIN32
         HANDLE hCom;
         DCB dcb;
+#else 
+        int fId;
+        struct termios tty;
 #endif
 
     public:
         enum Parity {
-            NO=0, ODD=1, EVEN=2, MARK=3, SPACE=4
+#ifdef _WIN32
+            NO=NOPARITY, ODD=ODDPARITY, EVEN=EVENPARITY, MARK=MARKPARITY, SPACE=SPACEPARITY
+#else
+            NO, ODD;
+#endif
         };
         enum StopBits {
             ONE=0, ONE5 = 1, TWO=2 
@@ -45,8 +55,6 @@ class SimpleSerial {
 
         std::string read(uint32_t maxBytes);
 
-        
-        uint32_t available();
         bool write(std::string data);
         bool open(const std::string& port);
         bool close();

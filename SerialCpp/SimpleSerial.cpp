@@ -10,7 +10,11 @@
 #include <windows.h>
 #include <winbase.h>
 #else 
-#error "No WIN32!"
+#include <fcnctl.h>
+#include <errno.h>
+#include <unistd.h>
+#include <filesystem>
+#include <fcnctl.h>
 #endif
 
 
@@ -57,6 +61,9 @@ bool SimpleSerial::setTotalTimeouts(uint32_t readTimeoutMs, uint32_t writeTimeou
     timeouts.WriteTotalTimeoutConstant = writeTimeoutMs;
     return SetCommTimeouts(this->hCom, &timeouts); 
 #else
+    this->tty.c_cc[VTIME] = readTimeoutMs / 100;
+    this->tty.c_cc[VMIN] = 0;
+    // TODO writeTimeoutMs not possible; remove?
 #endif
 }
 
@@ -68,8 +75,13 @@ std::string SimpleSerial::read(uint32_t maxBytes) {
 
     char* const buffer = new char[maxBytes+1];
     uint32_t bytesWritten;
-    
-    bool success = ReadFile(this->hCom, (void*)buffer, maxBytes, (DWORD*)&bytesWritten, NULL);
+    bool success;    
+#ifdef _WIN32
+    success = ReadFile(this->hCom, (void*)buffer, maxBytes, (DWORD*)&bytesWritten, NULL);
+#else
+    bytesWritten = read(this->fId, buffer, maxBytes);
+    success = bytesWritten != -1;
+#endif
     if (!success)
         return std::string("");
 
@@ -77,11 +89,6 @@ std::string SimpleSerial::read(uint32_t maxBytes) {
     std::string s(buffer);
     delete[] buffer;
     return s;
-}
-
-// read without blocking. TODO or check if sth available?
-uint32_t SimpleSerial::available() {
-    return false;
 }
 
 
@@ -93,10 +100,15 @@ bool SimpleSerial::write(std::string data) {
     const char *buffer = data.c_str();
     uint32_t length = (uint32_t)data.length();
     uint32_t bytesWritten;
-    
-    bool success = WriteFile(this->hCom, buffer, length, (DWORD*)&bytesWritten, NULL);
+    bool success; 
+#ifdef _WIN32
+    success = WriteFile(this->hCom, buffer, length, (DWORD*)&bytesWritten, NULL);
+#else
+    bytesWritten = write(this->fId, buffer, length);
+    success = bytesWritten != -1; 
+#endif
     if (bytesWritten < length) {
-        // TODO write rest again?
+        // TODO try to write rest again?
 #ifdef DEBUG
         printf("[Serial] write(): Wrote %u out of %u bytes.", bytesWritten, length);
 #endif
@@ -116,8 +128,7 @@ bool SimpleSerial::open(const std::string& port) {
     printf("[Serial] Connecting to port %s...\n", port.c_str());
 #endif
 
-    //std::wstring wport(port.begin(), port.end());
-
+#ifdef _WIN32
     this->hCom = CreateFile(port.c_str(), GENERIC_READ | GENERIC_WRITE,
         0,      //  must be opened with exclusive-access
         NULL,   //  default security attributes
@@ -127,19 +138,44 @@ bool SimpleSerial::open(const std::string& port) {
     );
 
     if (this->hCom != INVALID_HANDLE_VALUE) {
+#else
+    this->hCom = open(port.c_str(), O_RDWR);
+    if (this->hCom < 0) {
+#endif
         this->connected = true;
 #ifdef DEBUG
         printf("[Serial] Connected.\n");
 #endif
 
+
+#ifdef _WIN32
         memset(&(this->dcb), 0, sizeof(DCB));
         if (GetCommState(hCom, &this->dcb) == 0) {
+#else
+        bool success = tcgetattr(this->fId, &this->tty) == 0;
+        if (success) {
+            this->tty.c_cflag &= ~CRTSCTS; 
+            this->tty.c_cflag |= CREAD | CLOCAL; 
+            // Disable canonical mode and signal chars
+            this->tty.c_lflag &= ~ICANON & ~ISIG;
+            this->tty.c_iflag &= ~IXON | ~IXOFF | ~IXANY;
+            // Disable any special handling of received bytes
+            this->tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
+            this->tty.c_oflag &= ~OPOST & ~ONCLR;
+
+            this->tty.c_cc[VTIME] = 20; 
+            this->tty.c_cc[VMIN] = 0;
+            success = tcsetattr(this->fId, &this->tty) == 0;
+        }
+        if (!success) {        
+#endif
 #ifdef DEBUG
             printf("[Serial] Error: Failed to get port config.\n");
 #endif
             this->close();
             return false;
         }
+
 
         return true;
     } else {
@@ -157,11 +193,16 @@ bool SimpleSerial::close() {
 #endif
         return false;
     }
-    CloseHandle(hCom);
+    bool success;
+#ifdef _WIN32
+    success = CloseHandle(this->hCom);
+#else
+    success = close(this->fId) == 0;
+#endif
 #ifdef DEBUG
     printf("[Serial] Closed connection.\n");
 #endif
-    return true;
+    return success;
 };
 
 
@@ -169,20 +210,63 @@ bool SimpleSerial::setPortConfig(uint32_t baudrate, uint32_t bytesize,
         SimpleSerial::Parity parity, SimpleSerial::StopBits stopBits) {
     if (!this->connected)
         return false;
+
+#ifdef _WIN32
     this->dcb.BaudRate = (DWORD)baudrate;
     this->dcb.ByteSize = (BYTE)bytesize;
     this->dcb.Parity = (BYTE)parity;
     this->dcb.StopBits = (BYTE)stopBits;
 
     return SetCommState(this->hCom, &this->dcb) != 0;
+#else
+    this->cfsetispeed(this->tty, baudrate);
+    this->cfsetospeed(this->tty, baudrate);
+
+    this->tty.c_cflag &= ~CSIZE;
+    if (bytesize == 5) {
+        this->tty.c_cflag |= CS5;
+    } else if (bytesize == 6) {
+        this->tty.c_cflag |= CS6;
+    } else if (bytesize == 7) {
+        this->tty.c_cflag |= CS7;
+    }
+    } else if (bytesize == 8) {
+        this->tty.c_cflag |= CS8;
+    } else {
+        return false;
+    }
+
+    if (parity == Parity::NO)
+        this->tty.c_cflag &= ~PARENB;
+    else if (parity == PARITY::ODD) {
+        this->tty.c_cflag |= PARENB;
+    } else {
+        return false;
+    }
+
+    if (stopBits == StopBits::ONE) {
+        tty.c_cflag &= ~CSTOPB;
+    } else if (stopBits == StopBits::TWO) {
+        tty.c_cflag |= CSTOPB;
+    } else {
+        return false;
+    }
+
+    return tcsetattr(this->fId, TCSAFLUSH, this->tty) == 0;
+#endif
 }
 
 bool  SimpleSerial::setBaudrate(uint32_t baudrate) {
     if (!this->connected)
         return false;
+#ifdef _WIN32
     this->dcb.BaudRate = baudrate;
-
     return SetCommState(this->hCom, &this->dcb) != 0;
+#else
+    this->cfsetispeed(this->tty, baudrate);
+    this->cfsetospeed(this->tty, baudrate);
+    return tcsetattr(this->fId, TCSAFLUSH, this->tty) == 0;
+#endif
 }
 
 uint32_t SimpleSerial::findBaudrate(const std::string& dataToSend, const std::string& dataToExpect) {
@@ -221,7 +305,11 @@ uint32_t SimpleSerial::findBaudrate(const std::string& dataToSend, const std::st
 unsigned int SimpleSerial::getBaudrate() {
     if (!this->connected)
         return 0;
+#ifdef _WIN32
     return this->dcb.BaudRate;
+#else
+    return cfgetispeed(&this->tty);
+#endif
 }
 
 void SimpleSerial::printPortConfig() {
@@ -256,13 +344,20 @@ void SimpleSerial::printPortConfig() {
 
 std::string SimpleSerial::getPortPath(std::string& port) {
     const uint32_t MAX_PATHSIZE = 100;
+#ifdef _WIN32
     wchar_t lpTargetPath[MAX_PATHSIZE];
     DWORD pathlen = QueryDosDeviceW(std::wstring(port.begin(), port.end()).c_str(), lpTargetPath, MAX_PATHSIZE);
     if (pathlen == 0)
         return std::string("");
-    //lpTargetPath[pathlen] = (wchar_t)0;
     std::wstring path(lpTargetPath);
     return std::string(path.begin(), path.end());
+#else
+    char filePath[MAX_PATHSIZE];
+    if (fcnctl(this->fId, F_GETPATH, filePath) == -1)
+        return std::string("");
+    // TODO look into content of directory instead
+    return std::string(filePath);
+#endif
 }
 
 std::vector<std::string> SimpleSerial::getAvailablePorts() {
@@ -278,7 +373,13 @@ std::vector<std::string> SimpleSerial::getAvailablePorts() {
         }
     }
 #else
-
+    const char *dir = "/dev/";
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        cout << entry.path() << endl;
+        if (entry.path().string().starts_with("tty")) {
+            ports.push_back(dir + entry.path().string());
+        }
+    }
 #endif
 
     return ports;
