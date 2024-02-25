@@ -11,7 +11,7 @@
 
 class SimpleSerial {
     private:
-        bool connected;
+        std::string port;
 
 #ifdef _WIN32
         HANDLE hCom;
@@ -59,8 +59,8 @@ class SimpleSerial {
         bool open(const std::string& port);
         bool close();
 
+        bool isConnected() const;
+
 
         //parseInt(); readStringUntil(); ...
-
-        bool isConnected() const {return connected;}
 };

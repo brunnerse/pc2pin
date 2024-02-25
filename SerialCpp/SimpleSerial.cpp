@@ -18,19 +18,23 @@
 #endif
 
 
+bool SimpleSerial::isConnected() const {
+    return this->port.length() > 0;
+}
+
 SimpleSerial::SimpleSerial()
-: connected(false)
+: port("") 
 {
 }
 
 SimpleSerial::SimpleSerial(const std::string &port)
-: connected(false)
+: port("") 
 {
    this->open(port);
 }
 
 SimpleSerial::SimpleSerial(const std::string &port, uint32_t baudRate)
-: connected(false)
+: port("")
 {
    if (this->open(port))
         this->setBaudrate(baudRate);
@@ -38,14 +42,14 @@ SimpleSerial::SimpleSerial(const std::string &port, uint32_t baudRate)
 
 SimpleSerial::~SimpleSerial()
 {
-    if (this->connected)
+    if (this->isConnected())
     {
         this->close();
     }
 }
 
 bool SimpleSerial::setTotalTimeouts(uint32_t readTimeoutMs, uint32_t writeTimeoutMs) {
-    if (!connected)
+    if (!this->isConnected())
         return false;
 #ifdef _WIN32
     COMMTIMEOUTS timeouts;
@@ -69,7 +73,7 @@ bool SimpleSerial::setTotalTimeouts(uint32_t readTimeoutMs, uint32_t writeTimeou
 
 
 std::string SimpleSerial::read(uint32_t maxBytes) {
-    if (!connected) {
+    if (!this->isConnected()) {
         return std::string("");
     }
 
@@ -93,7 +97,7 @@ std::string SimpleSerial::read(uint32_t maxBytes) {
 
 
 bool SimpleSerial::write(std::string data) {
-    if (!connected) {
+    if (!this->isConnected()) {
         return false;
     }
 
@@ -118,7 +122,7 @@ bool SimpleSerial::write(std::string data) {
 
 
 bool SimpleSerial::open(const std::string& port) {
-    if (this->connected) {
+    if (this->isConnected()) {
     #ifdef DEBUG
         printf("[Serial] Error during open(): There is already an open connection.");
     #endif
@@ -142,7 +146,7 @@ bool SimpleSerial::open(const std::string& port) {
     this->hCom = open(port.c_str(), O_RDWR);
     if (this->hCom < 0) {
 #endif
-        this->connected = true;
+        this->port = std::string(port);
 #ifdef DEBUG
         printf("[Serial] Connected.\n");
 #endif
@@ -187,7 +191,7 @@ bool SimpleSerial::open(const std::string& port) {
 }
 
 bool SimpleSerial::close() {
-    if (!this->connected)  {
+    if (!this->isConnected())  {
 #ifdef DEBUG
         printf("[Serial] Error: close() has been called on an already closed connection\n");
 #endif
@@ -199,6 +203,7 @@ bool SimpleSerial::close() {
 #else
     success = close(this->fId) == 0;
 #endif
+    this->port = "";
 #ifdef DEBUG
     printf("[Serial] Closed connection.\n");
 #endif
@@ -208,7 +213,7 @@ bool SimpleSerial::close() {
 
 bool SimpleSerial::setPortConfig(uint32_t baudrate, uint32_t bytesize, 
         SimpleSerial::Parity parity, SimpleSerial::StopBits stopBits) {
-    if (!this->connected)
+    if (!this->isConnected())
         return false;
 
 #ifdef _WIN32
@@ -257,7 +262,7 @@ bool SimpleSerial::setPortConfig(uint32_t baudrate, uint32_t bytesize,
 }
 
 bool  SimpleSerial::setBaudrate(uint32_t baudrate) {
-    if (!this->connected)
+    if (!this->isConnected())
         return false;
 #ifdef _WIN32
     this->dcb.BaudRate = baudrate;
@@ -270,7 +275,7 @@ bool  SimpleSerial::setBaudrate(uint32_t baudrate) {
 }
 
 uint32_t SimpleSerial::findBaudrate(const std::string& dataToSend, const std::string& dataToExpect) {
-    if (!connected)
+    if (!this->isConnected())
         return 0;
 #ifdef DEBUG
     printf("[Serial] Testing baud rates by sending \"%s\" and expecting to receive \"%s\"...\n",
@@ -286,7 +291,7 @@ uint32_t SimpleSerial::findBaudrate(const std::string& dataToSend, const std::st
 #endif
         this->write(dataToSend);
         std::string output = this->read(dataToSend.length()+10);
-        if (output.compare(dataToExpect) == 0) {
+        if (output.find(dataToExpect) == 0) { // if output starts with dataToExpect
 #ifdef DEBUG
            printf("[Serial] Success for baud rate %u: Received \"%s\"\n", rate, output.c_str());
 #endif
@@ -295,6 +300,9 @@ uint32_t SimpleSerial::findBaudrate(const std::string& dataToSend, const std::st
 #ifdef DEBUG
            printf("[Serial] Failed: Received \"%s\"\n", output.c_str());
 #endif
+            //std::string port = this->port;
+            //this->close();
+            //this->open(port);
         }
     }
     // No correct baud rate found
@@ -303,7 +311,7 @@ uint32_t SimpleSerial::findBaudrate(const std::string& dataToSend, const std::st
 }
 
 unsigned int SimpleSerial::getBaudrate() {
-    if (!this->connected)
+    if (!this->isConnected())
         return 0;
 #ifdef _WIN32
     return this->dcb.BaudRate;
@@ -313,7 +321,7 @@ unsigned int SimpleSerial::getBaudrate() {
 }
 
 void SimpleSerial::printPortConfig() {
-    if (!connected) {
+    if (!this->isConnected()) {
         printf("[Serial] Not connected.\n");
         return;
     }
